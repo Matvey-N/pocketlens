@@ -4,7 +4,6 @@ import com.pocketlens.categorization.domain.CategorizationSource;
 import com.pocketlens.categorization.service.RuleService;
 import com.pocketlens.category.domain.Category;
 import com.pocketlens.category.service.CategoryService;
-import com.pocketlens.category.service.CategoryUsageCleaner;
 import com.pocketlens.common.config.CacheConfig;
 import com.pocketlens.common.error.NotFoundException;
 import com.pocketlens.transaction.domain.Transaction;
@@ -26,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Listing and correcting transactions (US-2.3, US-3.4).
  */
 @Service
-public class TransactionService implements CategoryUsageCleaner {
+public class TransactionService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
     private static final String RESOURCE = "Transaction";
@@ -91,10 +90,5 @@ public class TransactionService implements CategoryUsageCleaner {
     @Transactional(readOnly = true)
     public long countNeedsReview(UUID userId) {
         return transactions.countByUserIdAndNeedsReviewTrue(userId);
-    }
-
-    @Override
-    public void releaseCategory(UUID categoryId) {
-        transactions.clearCategory(categoryId);
     }
 }

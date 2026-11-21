@@ -92,7 +92,7 @@ class RuleServiceTest {
 
     @Test
     void releasesRulesOfDeletedCategory() {
-        service.releaseCategory(groceries.getId());
+        new RuleCategoryCleaner(rules).releaseCategory(groceries.getId());
         verify(rules).deleteByCategoryId(groceries.getId());
     }
 }

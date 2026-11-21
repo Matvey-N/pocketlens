@@ -7,7 +7,6 @@ import com.pocketlens.budget.persistence.BudgetWarningRepository;
 import com.pocketlens.category.domain.Category;
 import com.pocketlens.category.domain.CategoryKind;
 import com.pocketlens.category.service.CategoryService;
-import com.pocketlens.category.service.CategoryUsageCleaner;
 import com.pocketlens.common.config.CacheConfig;
 import com.pocketlens.common.error.ApiException;
 import com.pocketlens.common.error.ConflictException;
@@ -35,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Monthly budgets with early warnings (US-3.1, US-3.2).
  */
 @Service
-public class BudgetService implements CategoryUsageCleaner {
+public class BudgetService {
 
     private static final Logger log = LoggerFactory.getLogger(BudgetService.class);
     private static final String RESOURCE = "Budget";
@@ -108,11 +107,6 @@ public class BudgetService implements CategoryUsageCleaner {
     @CacheEvict(cacheNames = CacheConfig.DASHBOARD_CACHE, allEntries = true)
     public void delete(UUID userId, UUID budgetId) {
         budgets.delete(getOwned(userId, budgetId));
-    }
-
-    @Override
-    public void releaseCategory(UUID categoryId) {
-        budgets.deleteByCategoryId(categoryId);
     }
 
     private Budget getOwned(UUID userId, UUID budgetId) {

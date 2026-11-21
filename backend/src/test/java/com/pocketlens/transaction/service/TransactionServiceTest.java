@@ -90,7 +90,7 @@ class TransactionServiceTest {
         assertThat(service.countNeedsReview(USER_ID)).isEqualTo(4);
         when(transactions.findAll(any(Specification.class))).thenReturn(List.of());
         assertThat(service.findByIds(USER_ID, List.of(UUID.randomUUID()))).isEmpty();
-        service.releaseCategory(eatingOut.getId());
+        new TransactionCategoryCleaner(transactions).releaseCategory(eatingOut.getId());
         verify(transactions).clearCategory(eatingOut.getId());
     }
 }

@@ -110,7 +110,7 @@ class BudgetServiceTest {
         when(budgets.findByIdAndUserId(missing, USER_ID)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.delete(USER_ID, missing)).isInstanceOf(NotFoundException.class);
 
-        service.releaseCategory(groceries.getId());
+        new BudgetCategoryCleaner(budgets).releaseCategory(groceries.getId());
         verify(budgets).deleteByCategoryId(groceries.getId());
     }
 }

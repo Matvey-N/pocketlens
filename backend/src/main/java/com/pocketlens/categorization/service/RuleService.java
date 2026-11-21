@@ -4,7 +4,6 @@ import com.pocketlens.categorization.domain.MerchantRule;
 import com.pocketlens.categorization.persistence.MerchantRuleRepository;
 import com.pocketlens.category.domain.Category;
 import com.pocketlens.category.service.CategoryService;
-import com.pocketlens.category.service.CategoryUsageCleaner;
 import com.pocketlens.common.error.ConflictException;
 import com.pocketlens.common.error.NotFoundException;
 import java.time.Clock;
@@ -17,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
  * User rules learned from corrections (US-2.3) and global rules managed by administrators (US-7.1).
  */
 @Service
-public class RuleService implements CategoryUsageCleaner {
+public class RuleService {
 
     private static final String RESOURCE = "Rule";
 
@@ -81,10 +80,5 @@ public class RuleService implements CategoryUsageCleaner {
                 .filter(MerchantRule::isGlobal)
                 .orElseThrow(() -> new NotFoundException(RESOURCE, ruleId));
         rules.delete(rule);
-    }
-
-    @Override
-    public void releaseCategory(UUID categoryId) {
-        rules.deleteByCategoryId(categoryId);
     }
 }
