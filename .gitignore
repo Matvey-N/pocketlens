@@ -1,0 +1,21 @@
+# Build output
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+docs-site/
+
+# Local configuration and secrets (never commit these)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store

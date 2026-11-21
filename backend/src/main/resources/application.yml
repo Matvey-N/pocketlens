@@ -1,0 +1,116 @@
+# PocketLens configuration. Every environment-specific value or secret comes from an environment variable;
+# the defaults below are only suitable for local development.
+spring:
+  application:
+    name: pocketlens
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/pocketlens}
+    username: ${DB_USERNAME:pocketlens}
+    password: ${DB_PASSWORD:pocketlens}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  flyway:
+    enabled: true
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+  cache:
+    type: ${CACHE_TYPE:simple}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    default-property-inclusion: always
+  mvc:
+    problemdetails:
+      enabled: false
+
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:ecs}
+  level:
+    root: INFO
+    com.pocketlens: ${LOG_LEVEL:INFO}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
+  metrics:
+    tags:
+      application: pocketlens
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: PocketLens
+    version: '@project.version@'
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    url: /openapi.yaml
+    path: /swagger-ui.html
+
+pocketlens:
+  jwt:
+    secret: ${JWT_SECRET:local-development-secret-change-me-0123456789}
+    issuer: ${JWT_ISSUER:pocketlens}
+    access-token-ttl: ${JWT_ACCESS_TTL:PT15M}
+    refresh-token-ttl: ${JWT_REFRESH_TTL:P7D}
+    secure-cookie: ${COOKIE_SECURE:false}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  ai:
+    api-key: ${AI_API_KEY:}
+    base-url: ${AI_BASE_URL:https://api.anthropic.com}
+    model: ${AI_MODEL:claude-haiku-5-5}
+    max-tokens: ${AI_MAX_TOKENS:1024}
+    timeout: ${AI_TIMEOUT:PT20S}
+    confidence-threshold: ${AI_CONFIDENCE_THRESHOLD:0.8}
+    categorization-batch-size: ${AI_BATCH_SIZE:40}
+  assistant:
+    max-question-length: 1000
+    requests-per-minute: ${ASSISTANT_RPM:20}
+    max-tool-iterations: 4
+    history-messages: 10
+  imports:
+    max-file-size-bytes: 5242880
+    max-rows: 20000
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
