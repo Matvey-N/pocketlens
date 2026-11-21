@@ -23,6 +23,7 @@ public class PromptGuard {
             Pattern.compile("developer mode|jailbreak|\\bdan mode\\b"),
             Pattern.compile("</?\\s*(system|assistant|tool)\\s*>"),
             Pattern.compile("(other|another|all) users?'? (data|transactions)"),
+            Pattern.compile("(data|transactions) of (other|another|all) users?"),
             Pattern.compile("игнорируй (все )?(предыдущие|прошлые) инструкции"));
 
     private final int maxLength;
