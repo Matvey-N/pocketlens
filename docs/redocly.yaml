@@ -1,0 +1,14 @@
+# Redocly CLI configuration: lint rules for the OpenAPI contract (run in CI, errors fail the build).
+extends:
+  - recommended
+rules:
+  operation-operationId: error
+  operation-summary: error
+  operation-description: off
+  tag-description: error
+  info-license: error
+  no-unused-components: error
+  # Public endpoints without client errors (privacy notice, logout) are reported as warnings only.
+  operation-4xx-response: warn
+  # The documented server is the local development instance; production is the same origin as the web app.
+  no-server-example.com: off

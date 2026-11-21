@@ -1,0 +1,2504 @@
+openapi: 3.0.3
+info:
+  title: PocketLens API
+  version: 1.0.0
+  description: |
+    REST API of **PocketLens**, a web application that imports bank statements (CSV), categorises transactions
+    automatically (merchant rules first, AI for unknown merchants), tracks monthly budgets with early warnings,
+    detects subscriptions and answers spending questions with an AI assistant based on tool calling.
+
+    * **Base path:** `/api/v1` (URI versioning, see the versioning guide).
+    * **Format:** JSON (`application/json`) for requests and responses; CSV upload uses `multipart/form-data`.
+    * **Authentication:** short-lived JWT access token in the `Authorization: Bearer` header; the refresh token
+      is an `HttpOnly` cookie (`pl_refresh`).
+    * **Errors:** [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details with a stable `code`
+      (`application/problem+json`).
+    * **Data isolation:** every resource belongs to the authenticated user. Resources of other users answer
+      `404 Not Found`, so their existence is never revealed.
+
+    Guides: [Getting started](../guides/getting-started.md) ·
+    [Tutorial: import and ask the assistant](../guides/tutorial-import-and-ask.md) ·
+    [Authentication](../concepts/authentication.md) · [Errors](../concepts/errors.md)
+  contact:
+    name: PocketLens author
+    url: https://github.com/Matvey-N/pocketlens
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: http://localhost:8080
+    description: Local development (docker compose or `mvn spring-boot:run`)
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+    description: Registration, login, session refresh and privacy notice (US-6.1, US-6.2).
+  - name: Account
+    description: Current user, data export and account deletion (US-6.3, US-6.4).
+  - name: Imports
+    description: CSV statement import with built-in bank formats and saved column mappings (UC-1, US-1.1–US-1.4).
+  - name: Transactions
+    description: Listing, filtering and correcting transactions (US-2.3, US-3.4).
+  - name: Categories
+    description: Default and custom categories (US-2.4).
+  - name: Rules
+    description: Merchant rules learned from corrections (US-2.3).
+  - name: Budgets
+    description: Monthly budgets with projection and early warnings (US-3.1, US-3.2).
+  - name: Insights
+    description: Dashboard and detected subscriptions (US-3.4, US-5.1, US-5.2).
+  - name: Assistant
+    description: AI assistant conversations with interpretation and source transactions (UC-2, US-4.1–US-4.4).
+  - name: Admin
+    description: Default categories, global rules and usage statistics. Requires the `ADMIN` role (US-7.1, US-7.2).
+
+paths:
+  /api/v1/privacy-notice:
+    get:
+      tags: [Auth]
+      operationId: getPrivacyNotice
+      summary: Get the current privacy notice
+      description: Returns the privacy notice that must be accepted at registration. The `version` must be sent back in 
+        the registration request.
+      security: []
+      responses:
+        '200':
+          description: Current privacy notice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyNotice'
+              example:
+                version: '2026-11'
+                text: PocketLens stores the transactions you import ... You can export all your data or delete your 
+                  account at any time in Settings.
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Register a new account
+      description: Creates a user, records the consent to the privacy notice and starts a session. Sets the 
+        refresh-token cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: anna@example.com
+              password: Spring2026secure
+              displayName: Anna
+              acceptPrivacyNotice: true
+              privacyNoticeVersion: '2026-11'
+      responses:
+        '201':
+          description: Account created, user logged in.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: 
+                  eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJwb2NrZXRsZW5zIiwic3ViIjoiYjNmNGU1ZDYiLCJyb2xlcyI6WyJVU0VSIl19.sig
+                tokenType: Bearer
+                expiresIn: 900
+                user:
+                  id: b3f4e5d6-a7b8-4c9d-8e0f-1a2b3c4d5e6f
+                  email: anna@example.com
+                  displayName: Anna
+                  role: USER
+                  privacyNoticeVersion: '2026-11'
+                  createdAt: '2026-11-20T08:00:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Log in
+      description: Checks the credentials and starts a session. The response does not reveal whether the e-mail exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: anna@example.com
+              password: Spring2026secure
+      responses:
+        '200':
+          description: Logged in.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: 
+                  eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJwb2NrZXRsZW5zIiwic3ViIjoiYjNmNGU1ZDYiLCJyb2xlcyI6WyJVU0VSIl19.sig
+                tokenType: Bearer
+                expiresIn: 900
+                user:
+                  id: b3f4e5d6-a7b8-4c9d-8e0f-1a2b3c4d5e6f
+                  email: anna@example.com
+                  displayName: Anna
+                  role: USER
+                  privacyNoticeVersion: '2026-11'
+                  createdAt: '2026-11-20T08:00:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Wrong e-mail or password.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://pocketlens.app/problems/invalid-credentials
+                title: Invalid e-mail or password
+                status: 401
+                detail: E-mail or password is incorrect
+                code: INVALID_CREDENTIALS
+                correlationId: 6f1c2a9e-3b7d-4c55-9a51-0c2d8e4f7a10
+                timestamp: '2026-11-22T10:15:30Z'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Refresh the session
+      description: |
+        Exchanges the refresh-token cookie for a new access token **and a new refresh token** (rotation).
+        Re-using an already rotated refresh token revokes all sessions of the user.
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: New access token; the cookie is replaced.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/RefreshCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: 
+                  eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJwb2NrZXRsZW5zIiwic3ViIjoiYjNmNGU1ZDYiLCJyb2xlcyI6WyJVU0VSIl19.sig
+                tokenType: Bearer
+                expiresIn: 900
+                user:
+                  id: b3f4e5d6-a7b8-4c9d-8e0f-1a2b3c4d5e6f
+                  email: anna@example.com
+                  displayName: Anna
+                  role: USER
+                  privacyNoticeVersion: '2026-11'
+                  createdAt: '2026-11-20T08:00:00Z'
+        '401':
+          description: Missing, expired, revoked or re-used refresh token.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://pocketlens.app/problems/invalid-refresh-token
+                title: Session expired
+                status: 401
+                detail: The session has expired. Please log in again.
+                code: INVALID_REFRESH_TOKEN
+                correlationId: 0b6c7f3a-5d1e-4a8b-9f22-7e4d3c2b1a00
+                timestamp: '2026-11-22T10:15:30Z'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Log out
+      description: Revokes the refresh token from the cookie (if any) and clears the cookie. Always succeeds.
+      security:
+        - refreshCookie: []
+      responses:
+        '204':
+          description: Logged out; the cookie is cleared.
+
+  /api/v1/users/me:
+    get:
+      tags: [Account]
+      operationId: getCurrentUser
+      summary: Get the current user
+      responses:
+        '200':
+          description: The authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: b3f4e5d6-a7b8-4c9d-8e0f-1a2b3c4d5e6f
+                email: anna@example.com
+                displayName: Anna
+                role: USER
+                privacyNoticeVersion: '2026-11'
+                createdAt: '2026-11-20T08:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Account]
+      operationId: deleteAccount
+      summary: Delete the account and all data
+      description: Deletes the user and, through database cascades, every transaction, rule, budget and conversation 
+        (GDPR Art. 17). The current password must be confirmed. This cannot be undone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountRequest'
+            example:
+              password: Spring2026secure
+      responses:
+        '204':
+          description: Account and all data deleted.
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          description: Not authenticated, or the password is wrong (`INVALID_CREDENTIALS`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/users/me/export:
+    get:
+      tags: [Account]
+      operationId: exportData
+      summary: Export all personal data
+      description: Returns all data of the user as a JSON file download (GDPR Art. 15 and 20).
+      responses:
+        '200':
+          description: Data export.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="pocketlens-export-YYYY-MM-DD.json"`'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/imports/formats:
+    get:
+      tags: [Imports]
+      operationId: listImportFormats
+      summary: List built-in statement formats
+      responses:
+        '200':
+          description: Built-in formats.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatementFormat'
+              example:
+                - id: generic
+                  name: PocketLens template (Date, Description, Amount, Currency)
+                  delimiter: ','
+                  requiredColumns: [Date, Description, Amount, Currency]
+                - id: revolut
+                  name: Revolut (account statement CSV)
+                  delimiter: ','
+                  requiredColumns: [Completed Date, Description, Amount, Fee, Currency, State]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/imports:
+    get:
+      tags: [Imports]
+      operationId: listImports
+      summary: List recent imports
+      description: The 20 most recent imports of the user with their summaries.
+      responses:
+        '200':
+          description: Import history, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImportBatch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Imports]
+      operationId: importStatement
+      summary: Import a CSV statement
+      description: |
+        Validates the file (CSV, ≤ 5 MB), parses and normalises the rows, skips rows imported before
+        (de-duplication), stores new transactions and categorises them (rules → AI → "Needs review").
+        Specify **exactly one** of `format` (built-in format id) or `profileId` (saved column mapping).
+        A file with missing columns or invalid rows is rejected as a whole — nothing is imported half-way.
+      parameters:
+        - name: format
+          in: query
+          description: Id of a built-in format (see `GET /api/v1/imports/formats`).
+          schema:
+            type: string
+            example: generic
+        - name: profileId
+          in: query
+          description: Id of a saved column mapping.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (UTF-8 or Windows-1252), at most 5 MB and 20 000 rows.
+      responses:
+        '201':
+          description: Import finished.
+          headers:
+            Location:
+              description: URL of the import batch.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportSummary'
+              example:
+                batchId: 3f0e8a52-7c1d-4b9e-a2f4-8d6b5c4e3a21
+                fileName: revolut-2026-11.csv
+                format: Revolut (account statement CSV)
+                rowsRead: 142
+                imported: 118
+                duplicates: 21
+                skipped: 3
+                categorizedByRules: 96
+                categorizedByAi: 22
+                needsReview: 7
+                uncategorized: 0
+                aiAvailable: true
+        '400':
+          description: Invalid request — unreadable or empty file (`IMPORT_FILE_INVALID`), neither or both of 
+            `format`/`profileId`, unknown format (`VALIDATION_FAILED`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://pocketlens.app/problems/validation-failed
+                title: Request validation failed
+                status: 400
+                detail: Specify exactly one of 'format' or 'profileId'
+                code: VALIDATION_FAILED
+                correlationId: 1d2e3f4a-5b6c-4d7e-8f90-a1b2c3d4e5f6
+                timestamp: '2026-11-22T10:15:30Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '422':
+          description: The file does not match the format (`IMPORT_COLUMNS_MISSING`) or contains invalid rows 
+            (`IMPORT_ROWS_INVALID`). Nothing was imported.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                missingColumns:
+                  summary: Columns missing
+                  value:
+                    type: https://pocketlens.app/problems/import-columns-missing
+                    title: The file does not match the selected format
+                    status: 422
+                    detail: "Missing columns for format 'PocketLens template (Date, Description, Amount, Currency)': Amount,
+                      Currency"
+                    code: IMPORT_COLUMNS_MISSING
+                    missingColumns: [Amount, Currency]
+                    foundColumns: [Date, Description, Sum]
+                    correlationId: 9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d
+                    timestamp: '2026-11-22T10:15:30Z'
+                invalidRows:
+                  summary: Invalid rows
+                  value:
+                    type: https://pocketlens.app/problems/import-rows-invalid
+                    title: Some rows of the file contain invalid values
+                    status: 422
+                    detail: Nothing was imported because some rows are invalid
+                    code: IMPORT_ROWS_INVALID
+                    rowErrors:
+                      - row: 4
+                        message: date '2026-13-01' does not match yyyy-MM-dd
+                      - row: 9
+                        message: amount 'abc' is not a number
+                    correlationId: 2b3c4d5e-6f70-4812-93a4-b5c6d7e8f901
+                    timestamp: '2026-11-22T10:15:30Z'
+
+  /api/v1/imports/preview:
+    post:
+      tags: [Imports]
+      operationId: previewStatement
+      summary: Preview a CSV file
+      description: Detects the delimiter and returns the headers, the first five rows and the built-in formats that 
+        match. Used by the column-mapping screen (US-1.4). Nothing is stored.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Preview of the file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CsvPreview'
+              example:
+                delimiter: ';'
+                headers: [Date, Details, Debit, Credit, Currency]
+                rows:
+                  - ['03.11.2026', MAXIMA LT-0042, '12,40', '', EUR]
+                matchingFormats: [eu-debit-credit]
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+
+  /api/v1/import-profiles:
+    get:
+      tags: [Imports]
+      operationId: listImportProfiles
+      summary: List saved column mappings
+      responses:
+        '200':
+          description: Saved mappings of the user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImportProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Imports]
+      operationId: createImportProfile
+      summary: Save a column mapping
+      description: Map the columns of a bank without a built-in format once; use the returned `id` as `profileId` for 
+        every import. Map either `amountColumn` or both `debitColumn` and `creditColumn`, and either `currencyColumn` or
+        `defaultCurrency`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportProfileRequest'
+            example:
+              name: Local bank
+              delimiter: ';'
+              dateColumn: Data
+              dateFormat: yyyy-MM-dd
+              descriptionColumn: Paskirtis
+              amountColumn: Suma
+              defaultCurrency: EUR
+              decimalSeparator: ','
+      responses:
+        '201':
+          description: Mapping saved.
+          headers:
+            Location:
+              description: URL of the new mapping.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportProfile'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/import-profiles/{id}:
+    delete:
+      tags: [Imports]
+      operationId: deleteImportProfile
+      summary: Delete a saved column mapping
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Mapping deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/transactions:
+    get:
+      tags: [Transactions]
+      operationId: listTransactions
+      summary: List transactions
+      description: Paginated, filtered and sorted list of the user's transactions. All filters are optional and combined
+        with AND.
+      parameters:
+        - name: from
+          in: query
+          description: First booking date (inclusive).
+          schema:
+            type: string
+            format: date
+            example: '2026-11-01'
+        - name: to
+          in: query
+          description: Last booking date (inclusive).
+          schema:
+            type: string
+            format: date
+            example: '2026-11-30'
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: uncategorized
+          in: query
+          description: '`true` = only transactions without a category.'
+          schema:
+            type: boolean
+        - name: needsReview
+          in: query
+          description: '`true` = only transactions the user should check.'
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          description: Text search in description and merchant (case-insensitive).
+          schema:
+            type: string
+            maxLength: 100
+            example: lidl
+        - name: currency
+          in: query
+          schema:
+            type: string
+            pattern: '^[A-Za-z]{3}$'
+            example: EUR
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: Sort key and direction.
+          schema:
+            type: string
+            enum: ['date,desc', 'date,asc', 'amount,asc', 'amount,desc', 'merchant,asc', 'merchant,desc']
+            default: 'date,desc'
+      responses:
+        '200':
+          description: One page of transactions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPage'
+              example:
+                items:
+                  - id: 9f8e7d6c-5b4a-4398-8172-6f5e4d3c2b1a
+                    date: '2026-11-02'
+                    amount: -17.90
+                    currency: EUR
+                    description: LIDL 1234 VILNIUS
+                    merchant: LIDL VILNIUS
+                    category:
+                      id: 00000000-0000-4000-8000-000000000001
+                      name: Groceries
+                      color: '#4CAF50'
+                    categorizationSource: RULE
+                    confidence: 1.00
+                    needsReview: false
+                page: 0
+                size: 20
+                totalItems: 1
+                totalPages: 1
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/{id}:
+    get:
+      tags: [Transactions]
+      operationId: getTransaction
+      summary: Get a transaction
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+              example:
+                id: 9f8e7d6c-5b4a-4398-8172-6f5e4d3c2b1a
+                date: '2026-11-02'
+                amount: -17.90
+                currency: EUR
+                description: LIDL 1234 VILNIUS
+                merchant: LIDL VILNIUS
+                category:
+                  id: 00000000-0000-4000-8000-000000000001
+                  name: Groceries
+                  color: '#4CAF50'
+                categorizationSource: RULE
+                confidence: 1.00
+                needsReview: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Transactions]
+      operationId: updateTransactionCategory
+      summary: Correct the category
+      description: |
+        Sets the category chosen by the user (source `MANUAL`). With `applyToMerchant: true` ("Always use this
+        category") a rule *merchant → category* is created and all transactions of the same merchant that were not
+        corrected manually are re-categorised. Future imports of this merchant use the rule without AI (US-2.3).
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransactionRequest'
+            example:
+              categoryId: 00000000-0000-4000-8000-000000000002
+              applyToMerchant: true
+      responses:
+        '200':
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateTransactionResponse'
+              example:
+                transaction:
+                  id: 9f8e7d6c-5b4a-4398-8172-6f5e4d3c2b1a
+                  date: '2026-11-02'
+                  amount: -17.90
+                  currency: EUR
+                  description: LIDL 1234 VILNIUS
+                  merchant: LIDL VILNIUS
+                  category:
+                    id: 00000000-0000-4000-8000-000000000001
+                    name: Groceries
+                    color: '#4CAF50'
+                  categorizationSource: RULE
+                  confidence: 1.00
+                  needsReview: false
+                ruleCreated: true
+                recategorizedCount: 5
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: List categories
+      description: Default categories plus the user's own categories, sorted by name.
+      responses:
+        '200':
+          description: Categories visible to the user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+              example:
+                - id: 00000000-0000-4000-8000-000000000001
+                  name: Groceries
+                  color: '#4CAF50'
+                  kind: EXPENSE
+                  isDefault: true
+                  systemKey: groceries
+                - id: 8c1b2a3d-4e5f-4a6b-9c7d-8e9f0a1b2c3d
+                  name: Pets
+                  color: '#8D6E63'
+                  kind: EXPENSE
+                  isDefault: false
+                  systemKey:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      summary: Create a custom category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+            example:
+              name: Pets
+              color: '#8D6E63'
+              kind: EXPENSE
+      responses:
+        '201':
+          description: Category created.
+          headers:
+            Location:
+              description: URL of the new category.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/categories/{id}:
+    put:
+      tags: [Categories]
+      operationId: updateCategory
+      summary: Update a custom category
+      description: Only the user's own categories can be changed; default categories answer 404.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '200':
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      summary: Delete a custom category
+      description: Transactions of the category become uncategorised and are marked "Needs review"; its rules and 
+        budgets are deleted.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Category deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/rules:
+    get:
+      tags: [Rules]
+      operationId: listRules
+      summary: List the user's merchant rules
+      responses:
+        '200':
+          description: Rules created from corrections.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+              example:
+                - id: 5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d
+                  pattern: CAFE BLOOM
+                  categoryId: 00000000-0000-4000-8000-000000000002
+                  categoryName: Eating out
+                  global: false
+                  createdAt: '2026-11-21T18:02:11Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/rules/{id}:
+    delete:
+      tags: [Rules]
+      operationId: deleteRule
+      summary: Delete a merchant rule
+      description: Already categorised transactions keep their category.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Rule deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/budgets:
+    get:
+      tags: [Budgets]
+      operationId: listBudgets
+      summary: List budgets with their status
+      description: Budgets of the user with spending, remaining amount and a linear month-end projection for the given 
+        month. For the current month, budgets that are projected to be exceeded have status `AT_RISK` and a 
+        `projectedOverrunDate` (US-3.2).
+      parameters:
+        - $ref: '#/components/parameters/Month'
+      responses:
+        '200':
+          description: Budget statuses.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BudgetStatus'
+              example:
+                - budgetId: 2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f
+                  categoryId: 00000000-0000-4000-8000-000000000001
+                  categoryName: Groceries
+                  categoryColor: '#4CAF50'
+                  currency: EUR
+                  limit: 300.00
+                  spent: 284.10
+                  remaining: 15.90
+                  projectedSpending: 387.41
+                  percentUsed: 95
+                  health: AT_RISK
+                  projectedOverrunDate: '2026-11-23'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Budgets]
+      operationId: createBudget
+      summary: Create a monthly budget
+      description: One budget per expense category and currency. The limit applies to every month.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetRequest'
+            example:
+              categoryId: 00000000-0000-4000-8000-000000000001
+              monthlyLimit: 300.00
+              currency: EUR
+      responses:
+        '201':
+          description: Budget created.
+          headers:
+            Location:
+              description: URL of the new budget.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/budgets/{id}:
+    put:
+      tags: [Budgets]
+      operationId: updateBudget
+      summary: Change the monthly limit
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetLimitRequest'
+            example:
+              monthlyLimit: 350.00
+      responses:
+        '200':
+          description: Budget updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Budgets]
+      operationId: deleteBudget
+      summary: Delete a budget
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Budget deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/dashboard:
+    get:
+      tags: [Insights]
+      operationId: getDashboard
+      summary: Get the dashboard
+      description: |
+        Spending by category, totals and a six-month trend **per currency** (amounts in different currencies are
+        never added up), budget statuses and the number of transactions to review. Cached per user and month
+        (Redis) and refreshed after every change of the user's data.
+      parameters:
+        - $ref: '#/components/parameters/Month'
+      responses:
+        '200':
+          description: Dashboard data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+              example:
+                month: 2026-11
+                currencies:
+                  - currency: EUR
+                    expenses: 1284.35
+                    income: 2500.00
+                    net: 1215.65
+                    byCategory:
+                      - categoryId: 00000000-0000-4000-8000-000000000004
+                        name: Housing
+                        color: '#795548'
+                        amount: 650.00
+                        count: 1
+                      - categoryId: 00000000-0000-4000-8000-000000000001
+                        name: Groceries
+                        color: '#4CAF50'
+                        amount: 284.10
+                        count: 17
+                    trend:
+                      - month: 2026-10
+                        expenses: 1402.80
+                        income: 2500.00
+                      - month: 2026-11
+                        expenses: 1284.35
+                        income: 2500.00
+                budgets:
+                  - budgetId: 2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f
+                    categoryId: 00000000-0000-4000-8000-000000000001
+                    categoryName: Groceries
+                    categoryColor: '#4CAF50'
+                    currency: EUR
+                    limit: 300.00
+                    spent: 284.10
+                    remaining: 15.90
+                    projectedSpending: 387.41
+                    percentUsed: 95
+                    health: AT_RISK
+                    projectedOverrunDate: '2026-11-23'
+                needsReviewCount: 4
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/subscriptions:
+    get:
+      tags: [Insights]
+      operationId: listSubscriptions
+      summary: List detected subscriptions
+      description: Recurring payments of the last 13 months — at least three payments to the same merchant with weekly, 
+        monthly or yearly intervals and similar amounts. Sorted by monthly cost. `priceIncreased` flags a price rise of 
+        at least 1 % (US-5.2).
+      responses:
+        '200':
+          description: Active subscriptions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+              example:
+                - merchant: SPOTIFY
+                  currency: EUR
+                  cadence: MONTHLY
+                  lastAmount: 11.99
+                  previousAmount: 10.99
+                  priceIncreased: true
+                  monthlyCost: 11.99
+                  lastPaymentDate: '2026-11-03'
+                  nextExpectedDate: '2026-12-03'
+                  occurrences: 12
+                  transactionIds: [e2a1c3b4-5d6e-4f70-8192-a3b4c5d6e7f8]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/conversations:
+    get:
+      tags: [Assistant]
+      operationId: listConversations
+      summary: List conversations
+      responses:
+        '200':
+          description: Conversations, most recently updated first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Assistant]
+      operationId: startConversation
+      summary: Start a new conversation
+      description: Creates an empty conversation. Its title is set from the first question.
+      responses:
+        '201':
+          description: Conversation created.
+          headers:
+            Location:
+              description: URL of the new conversation.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+              example:
+                id: 7b6a5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d
+                title:
+                createdAt: '2026-11-22T09:30:00Z'
+                updatedAt: '2026-11-22T09:30:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/conversations/{id}:
+    get:
+      tags: [Assistant]
+      operationId: getConversation
+      summary: Get a conversation with its messages
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Conversation with messages in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Assistant]
+      operationId: deleteConversation
+      summary: Delete a conversation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Conversation and its messages deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/conversations/{id}/messages:
+    post:
+      tags: [Assistant]
+      operationId: askAssistant
+      summary: Ask the assistant
+      description: |
+        Stores the question and answers it with **tool calling**: the language model only interprets the question
+        and chooses backend tools (spending total, spending by category, largest/latest transactions, monthly
+        totals, budget status, subscriptions); every figure is computed by a user-scoped database query. The answer
+        contains the `interpretation` of the question (US-4.2) and `sourceTransactionCount`; the transactions are
+        available from the "Show list" endpoint (US-4.3).
+
+        Limits: 1 000 characters per question, 20 questions per minute per user (`429` with `Retry-After`).
+        Typical latency 2–10 s. If the AI provider is unavailable the question is kept in the conversation and
+        `503 AI_UNAVAILABLE` is returned — retry later. The request is **not idempotent**: retrying stores the
+        question again.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+            example:
+              content: How much did I spend on groceries last month?
+      responses:
+        '201':
+          description: Question and answer stored.
+          headers:
+            Location:
+              description: URL of the answer message.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exchange'
+              example:
+                question:
+                  id: 0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                  role: USER
+                  content: How much did I spend on groceries last month?
+                  interpretation: []
+                  toolCalls: []
+                  sourceTransactionCount: 0
+                  createdAt: '2026-11-22T09:31:02Z'
+                answer:
+                  id: 1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a
+                  role: ASSISTANT
+                  content: In October you spent 284.10 EUR on groceries in 17 purchases.
+                  interpretation:
+                    - 'Spending 2026-10-01 – 2026-10-31, category: Groceries'
+                  toolCalls:
+                    - tool: get_spending_total
+                      arguments:
+                        from: '2026-10-01'
+                        to: '2026-10-31'
+                        category: Groceries
+                      interpretation: 'Spending 2026-10-01 – 2026-10-31, category: Groceries'
+                      failed: false
+                  sourceTransactionCount: 17
+                  createdAt: '2026-11-22T09:31:06Z'
+
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: The question was rejected by the prompt-injection filter (`PROMPT_REJECTED`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://pocketlens.app/problems/prompt-rejected
+                title: The question cannot be processed
+                status: 422
+                detail: This question cannot be processed. Ask about your own spending, budgets or subscriptions.
+                code: PROMPT_REJECTED
+                correlationId: 4c5d6e7f-8091-4a2b-b3c4-d5e6f7a8b9c0
+                timestamp: '2026-11-22T09:31:02Z'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AiUnavailable'
+
+  /api/v1/conversations/{id}/messages/{messageId}/transactions:
+    get:
+      tags: [Assistant]
+      operationId: getAnswerSources
+      summary: Show the transactions behind an answer
+      description: Returns exactly the transactions an answer is based on and their sums per currency; the sum equals 
+        the figure in the answer (US-4.3).
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: messageId
+          in: path
+          required: true
+          description: Id of the assistant message.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Source transactions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerSources'
+              example:
+                transactions:
+                  - id: 9f8e7d6c-5b4a-4398-8172-6f5e4d3c2b1a
+                    date: '2026-11-02'
+                    amount: -17.90
+                    currency: EUR
+                    description: LIDL 1234 VILNIUS
+                    merchant: LIDL VILNIUS
+                    category:
+                      id: 00000000-0000-4000-8000-000000000001
+                      name: Groceries
+                      color: '#4CAF50'
+                    categorizationSource: RULE
+                    confidence: 1.00
+                    needsReview: false
+                totals:
+                  - currency: EUR
+                    amount: 284.10
+                    count: 17
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/categories:
+    get:
+      tags: [Admin]
+      operationId: adminListDefaultCategories
+      summary: List default categories
+      responses:
+        '200':
+          description: Default category catalogue.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminCreateDefaultCategory
+      summary: Create a default category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '201':
+          description: Default category created.
+          headers:
+            Location:
+              description: URL of the new category.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/admin/categories/{id}:
+    put:
+      tags: [Admin]
+      operationId: adminUpdateDefaultCategory
+      summary: Update a default category
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryRequest'
+      responses:
+        '200':
+          description: Default category updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/admin/rules:
+    get:
+      tags: [Admin]
+      operationId: adminListGlobalRules
+      summary: List global merchant rules
+      responses:
+        '200':
+          description: Global rules (apply to every user unless the user has an own rule).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Admin]
+      operationId: adminCreateGlobalRule
+      summary: Create a global merchant rule
+      description: The pattern is normalised (upper case, digits and noise removed) and must match the beginning of a 
+        word of the merchant name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GlobalRuleRequest'
+            example:
+              pattern: Aldi
+              categoryId: 00000000-0000-4000-8000-000000000001
+      responses:
+        '201':
+          description: Rule created.
+          headers:
+            Location:
+              description: URL of the new rule.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rule'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/admin/rules/{id}:
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteGlobalRule
+      summary: Delete a global merchant rule
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Rule deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Admin]
+      operationId: adminGetStats
+      summary: Get usage statistics
+      description: Aggregated usage of the last 30 days, including AI calls and tokens for cost control. Contains no 
+        personal data.
+      responses:
+        '200':
+          description: Statistics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStats'
+              example:
+                users: 12
+                transactions: 8431
+                assistantAnswersLast30Days: 214
+                aiCallsLast30Days: 503
+                inputTokensLast30Days: 912340
+                outputTokensLast30Days: 61220
+                aiEnabled: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Access token from login, registration or refresh. Valid for 15 minutes. Send as `Authorization: Bearer
+        <token>`.'
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: pl_refresh
+      description: Opaque refresh token (7 days) set by the server as an `HttpOnly; SameSite=Strict` cookie limited to 
+        `/api/v1/auth`. Browsers send it automatically; it cannot be read by JavaScript.
+
+  headers:
+    RefreshCookie:
+      description: '`pl_refresh=<token>; Path=/api/v1/auth; Max-Age=604800; HttpOnly; SameSite=Strict` (plus `Secure` in production).'
+      schema:
+        type: string
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      description: Resource id (UUID).
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      description: Zero-based page index.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Month:
+      name: month
+      in: query
+      description: Calendar month as `YYYY-MM`. Default is the current month.
+      schema:
+        type: string
+        pattern: '^\d{4}-\d{2}$'
+        example: 2026-11
+
+  responses:
+    ValidationFailed:
+      description: The request is invalid (`VALIDATION_FAILED`, `MALFORMED_REQUEST` or `IMPORT_FILE_INVALID`). Field 
+        errors are listed in `errors`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/validation-failed
+            title: Request validation failed
+            status: 400
+            detail: One or more fields are invalid
+            code: VALIDATION_FAILED
+            errors:
+              - field: email
+                message: must be a well-formed email address
+              - field: password
+                message: size must be between 10 and 72
+            correlationId: 3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7
+            timestamp: '2026-11-22T10:15:30Z'
+    Unauthorized:
+      description: The access token is missing, invalid or expired (`UNAUTHORIZED`). Refresh the session and retry.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/unauthorized
+            title: Authentication required
+            status: 401
+            detail: A valid access token is required. Log in or refresh the session.
+            code: UNAUTHORIZED
+            correlationId: 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
+            timestamp: '2026-11-22T10:15:30Z'
+    Forbidden:
+      description: The user does not have the required role (`FORBIDDEN`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/forbidden
+            title: Access denied
+            status: 403
+            detail: You do not have permission for this action
+            code: FORBIDDEN
+            correlationId: 6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e
+            timestamp: '2026-11-22T10:15:30Z'
+    NotFound:
+      description: The resource does not exist or belongs to another user (`NOT_FOUND`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/not-found
+            title: Resource not found
+            status: 404
+            detail: Transaction 9f8e7d6c-5b4a-4398-8172-6f5e4d3c2b1a was not found
+            code: NOT_FOUND
+            correlationId: 7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f
+            timestamp: '2026-11-22T10:15:30Z'
+    Conflict:
+      description: The request conflicts with existing data, e.g. a duplicate name or e-mail (`CONFLICT`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/conflict
+            title: Resource already exists
+            status: 409
+            detail: A category named 'Pets' already exists
+            code: CONFLICT
+            correlationId: 8d9e0f1a-2b3c-4d4e-9f5a-6b7c8d9e0f1a
+            timestamp: '2026-11-22T10:15:30Z'
+    FileTooLarge:
+      description: The file exceeds 5 MB (`FILE_TOO_LARGE`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/file-too-large
+            title: File is too large
+            status: 413
+            detail: The file exceeds the maximum size of 5 MB
+            code: FILE_TOO_LARGE
+            correlationId: 9e0f1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b
+            timestamp: '2026-11-22T10:15:30Z'
+    RateLimited:
+      description: More than 20 assistant questions per minute (`RATE_LIMITED`). Wait the number of seconds in 
+        `Retry-After`.
+      headers:
+        Retry-After:
+          description: Seconds to wait before the next request.
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/rate-limited
+            title: Too many requests
+            status: 429
+            detail: Request limit reached. Try again in 23 s
+            code: RATE_LIMITED
+            retryAfterSeconds: 23
+            correlationId: 0f1a2b3c-4d5e-4f6a-9b7c-8d9e0f1a2b3c
+            timestamp: '2026-11-22T10:15:30Z'
+    AiUnavailable:
+      description: The AI provider is not configured, timed out or returned an error after one retry (`AI_UNAVAILABLE`).
+        The question is kept; retry later.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://pocketlens.app/problems/ai-unavailable
+            title: The AI service is temporarily unavailable
+            status: 503
+            detail: The assistant is temporarily unavailable. Please try again later.
+            code: AI_UNAVAILABLE
+            correlationId: 1a2b3c4d-5e6f-4a7b-8c8d-9e0f1a2b3c4d
+            timestamp: '2026-11-22T10:15:30Z'
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details with PocketLens extension members.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI of the error type.
+        title:
+          type: string
+          description: Short, human-readable summary of the error type.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Explanation of this occurrence, safe to show to the user.
+        instance:
+          type: string
+          description: Request path.
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        correlationId:
+          type: string
+          description: Id of the request in the logs (also in the `X-Correlation-Id` response header). Quote it when 
+            reporting a problem.
+        timestamp:
+          type: string
+          format: date-time
+        errors:
+          type: array
+          description: Field errors (only for `VALIDATION_FAILED`).
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+        missingColumns:
+          type: array
+          description: Only for `IMPORT_COLUMNS_MISSING`.
+          items:
+            type: string
+        foundColumns:
+          type: array
+          description: Only for `IMPORT_COLUMNS_MISSING`.
+          items:
+            type: string
+        rowErrors:
+          type: array
+          description: Only for `IMPORT_ROWS_INVALID` (at most 20 entries).
+          items:
+            type: object
+            properties:
+              row:
+                type: integer
+              message:
+                type: string
+        retryAfterSeconds:
+          type: integer
+          description: Only for `RATE_LIMITED`.
+    ErrorCode:
+      type: string
+      description: Stable machine-readable error code. See the error taxonomy in docs/concepts/errors.md.
+      enum:
+        - VALIDATION_FAILED
+        - MALFORMED_REQUEST
+        - IMPORT_FILE_INVALID
+        - IMPORT_COLUMNS_MISSING
+        - IMPORT_ROWS_INVALID
+        - PROMPT_REJECTED
+        - UNAUTHORIZED
+        - INVALID_CREDENTIALS
+        - INVALID_REFRESH_TOKEN
+        - FORBIDDEN
+        - NOT_FOUND
+        - METHOD_NOT_ALLOWED
+        - CONFLICT
+        - FILE_TOO_LARGE
+        - UNSUPPORTED_MEDIA_TYPE
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+        - AI_UNAVAILABLE
+
+    PrivacyNotice:
+      type: object
+      required: [version, text]
+      properties:
+        version:
+          type: string
+          example: '2026-11'
+        text:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName, acceptPrivacyNotice, privacyNoticeVersion]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+          description: 10–72 characters with at least one letter and one digit.
+          format: password
+        displayName:
+          type: string
+          maxLength: 80
+        acceptPrivacyNotice:
+          type: boolean
+          description: Must be `true`.
+        privacyNoticeVersion:
+          type: string
+          description: Version from `GET /api/v1/privacy-notice`.
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        password:
+          type: string
+          maxLength: 72
+          format: password
+
+    AuthResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+          description: JWT (HS256) with claims `sub` (user id), `roles`, `iss`, `iat`, `exp`.
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          description: Lifetime of the access token in seconds.
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      required: [id, email, displayName, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [USER, ADMIN]
+        privacyNoticeVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    DeleteAccountRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          maxLength: 72
+          format: password
+
+    DataExport:
+      type: object
+      description: Portable copy of all personal data.
+      properties:
+        exportedAt:
+          type: string
+          format: date-time
+        profile:
+          type: object
+          additionalProperties: true
+        categories:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rules:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        budgets:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        transactions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        conversations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    StatementFormat:
+      type: object
+      required: [id, name, delimiter, requiredColumns]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        delimiter:
+          type: string
+        requiredColumns:
+          type: array
+          items:
+            type: string
+
+    ImportSummary:
+      type: object
+      required: [batchId, rowsRead, imported, duplicates, skipped, needsReview, aiAvailable]
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        format:
+          type: string
+          description: Display name of the format or mapping used.
+        rowsRead:
+          type: integer
+          description: Data rows in the file.
+        imported:
+          type: integer
+          description: New transactions stored.
+        duplicates:
+          type: integer
+          description: Rows skipped because they were imported before.
+        skipped:
+          type: integer
+          description: Rows that are not booked transactions (e.g. declined) or have a zero amount.
+        categorizedByRules:
+          type: integer
+        categorizedByAi:
+          type: integer
+        needsReview:
+          type: integer
+          description: Transactions the user should check (AI confidence below 0.8 or AI unavailable).
+        uncategorized:
+          type: integer
+        aiAvailable:
+          type: boolean
+          description: '`false` if AI categorisation was needed but unavailable; those transactions are retried automatically
+            every 30 minutes.'
+
+    ImportBatch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        format:
+          type: string
+        rowsRead:
+          type: integer
+        imported:
+          type: integer
+        duplicates:
+          type: integer
+        skipped:
+          type: integer
+        needsReview:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CsvPreview:
+      type: object
+      properties:
+        delimiter:
+          type: string
+        headers:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+        matchingFormats:
+          type: array
+          items:
+            type: string
+
+    ImportProfileRequest:
+      type: object
+      required: [name, delimiter, dateColumn, dateFormat, descriptionColumn, decimalSeparator]
+      properties:
+        name:
+          type: string
+          maxLength: 60
+        delimiter:
+          type: string
+          enum: [',', ';', '|', "\t"]
+        dateColumn:
+          type: string
+          maxLength: 80
+        dateFormat:
+          type: string
+          maxLength: 40
+          description: java.time pattern, e.g. `yyyy-MM-dd`, `dd.MM.yyyy`, `dd/MM/yyyy HH:mm`.
+        descriptionColumn:
+          type: string
+          maxLength: 80
+        amountColumn:
+          type: string
+          maxLength: 80
+          nullable: true
+        debitColumn:
+          type: string
+          maxLength: 80
+          nullable: true
+        creditColumn:
+          type: string
+          maxLength: 80
+          nullable: true
+        currencyColumn:
+          type: string
+          maxLength: 80
+          nullable: true
+        defaultCurrency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          nullable: true
+        decimalSeparator:
+          type: string
+          enum: ['.', ',']
+
+    ImportProfile:
+      allOf:
+        - $ref: '#/components/schemas/ImportProfileRequest'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+
+    CategoryRef:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+
+    Transaction:
+      type: object
+      required: [id, date, amount, currency, description, merchant, categorizationSource, needsReview]
+      properties:
+        id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          description: Booking date.
+        amount:
+          type: number
+          description: Negative for expenses, positive for income. Two decimals.
+        currency:
+          type: string
+          description: ISO 4217 code as provided by the bank (no conversion).
+        description:
+          type: string
+          description: Raw description from the statement.
+        merchant:
+          type: string
+          description: Normalised merchant key used by rules.
+        category:
+          $ref: '#/components/schemas/CategoryRef'
+        categorizationSource:
+          type: string
+          enum: [NONE, RULE, AI, MANUAL]
+        confidence:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Confidence of the AI suggestion (1.00 for rules, null for manual).
+        needsReview:
+          type: boolean
+
+    TransactionPage:
+      type: object
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalItems:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+
+    UpdateTransactionRequest:
+      type: object
+      required: [categoryId]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        applyToMerchant:
+          type: boolean
+          default: false
+          description: '"Always use this category for this merchant".'
+
+    UpdateTransactionResponse:
+      type: object
+      properties:
+        transaction:
+          $ref: '#/components/schemas/Transaction'
+        ruleCreated:
+          type: boolean
+        recategorizedCount:
+          type: integer
+          description: Other transactions of the merchant that received the category.
+
+    Category:
+      type: object
+      required: [id, name, color, kind, isDefault]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type: string
+          example: '#4CAF50'
+        kind:
+          type: string
+          enum: [EXPENSE, INCOME, TRANSFER]
+          description: Only EXPENSE categories count as spending and can have budgets.
+        isDefault:
+          type: boolean
+        systemKey:
+          type: string
+          nullable: true
+          description: Stable key of default categories, e.g. `groceries`.
+
+    CategoryRequest:
+      type: object
+      required: [name, color, kind]
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        kind:
+          type: string
+          enum: [EXPENSE, INCOME, TRANSFER]
+
+    Rule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pattern:
+          type: string
+          description: Normalised merchant key; matches merchants that contain it at the start of a word.
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+        global:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    GlobalRuleRequest:
+      type: object
+      required: [pattern, categoryId]
+      properties:
+        pattern:
+          type: string
+          minLength: 2
+          maxLength: 120
+        categoryId:
+          type: string
+          format: uuid
+          description: A default category.
+
+    BudgetRequest:
+      type: object
+      required: [categoryId, monthlyLimit, currency]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        monthlyLimit:
+          type: number
+          minimum: 1
+          maximum: 1000000
+        currency:
+          type: string
+          pattern: '^[A-Za-z]{3}$'
+
+    BudgetLimitRequest:
+      type: object
+      required: [monthlyLimit]
+      properties:
+        monthlyLimit:
+          type: number
+          minimum: 1
+          maximum: 1000000
+
+    Budget:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+        monthlyLimit:
+          type: number
+        currency:
+          type: string
+
+    BudgetStatus:
+      type: object
+      properties:
+        budgetId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+        categoryColor:
+          type: string
+        currency:
+          type: string
+        limit:
+          type: number
+        spent:
+          type: number
+        remaining:
+          type: number
+          description: Negative when exceeded.
+        projectedSpending:
+          type: number
+          description: Linear projection to the end of the month (equals `spent` for past months).
+        percentUsed:
+          type: integer
+        health:
+          type: string
+          enum: [ON_TRACK, AT_RISK, EXCEEDED]
+        projectedOverrunDate:
+          type: string
+          format: date
+          nullable: true
+          description: First day on which the limit is expected to be exceeded (only `AT_RISK`).
+
+    Dashboard:
+      type: object
+      properties:
+        month:
+          type: string
+          example: 2026-11
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CurrencySummary'
+        budgets:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetStatus'
+        needsReviewCount:
+          type: integer
+          format: int64
+
+    CurrencySummary:
+      type: object
+      properties:
+        currency:
+          type: string
+        expenses:
+          type: number
+        income:
+          type: number
+        net:
+          type: number
+        byCategory:
+          type: array
+          items:
+            type: object
+            properties:
+              categoryId:
+                type: string
+                format: uuid
+                nullable: true
+                description: null = uncategorised.
+              name:
+                type: string
+              color:
+                type: string
+              amount:
+                type: number
+              count:
+                type: integer
+                format: int64
+        trend:
+          type: array
+          description: Six months ending with the requested month.
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+              expenses:
+                type: number
+              income:
+                type: number
+
+    Subscription:
+      type: object
+      properties:
+        merchant:
+          type: string
+        currency:
+          type: string
+        cadence:
+          type: string
+          enum: [WEEKLY, MONTHLY, YEARLY]
+        lastAmount:
+          type: number
+        previousAmount:
+          type: number
+        priceIncreased:
+          type: boolean
+        monthlyCost:
+          type: number
+        lastPaymentDate:
+          type: string
+          format: date
+        nextExpectedDate:
+          type: string
+          format: date
+        occurrences:
+          type: integer
+        transactionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ConversationDetail:
+      allOf:
+        - $ref: '#/components/schemas/Conversation'
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: '#/components/schemas/Message'
+
+    ToolCall:
+      type: object
+      properties:
+        tool:
+          type: string
+          enum: [get_spending_total, get_spending_by_category, list_transactions, get_monthly_totals, get_budget_status, 
+                get_subscriptions]
+        arguments:
+          type: object
+          additionalProperties: true
+        interpretation:
+          type: string
+          nullable: true
+        failed:
+          type: boolean
+          description: The model passed invalid arguments; it was told the error and could retry.
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [USER, ASSISTANT]
+        content:
+          type: string
+        interpretation:
+          type: array
+          description: How the question was understood, one line per tool call (assistant messages only).
+          items:
+            type: string
+        toolCalls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+        sourceTransactionCount:
+          type: integer
+          description: Number of transactions behind the answer ("Show list").
+        createdAt:
+          type: string
+          format: date-time
+
+    AskRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: The question in any language.
+
+    Exchange:
+      type: object
+      properties:
+        question:
+          $ref: '#/components/schemas/Message'
+        answer:
+          $ref: '#/components/schemas/Message'
+
+    AnswerSources:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        totals:
+          type: array
+          items:
+            type: object
+            properties:
+              currency:
+                type: string
+              amount:
+                type: number
+                description: Sum of absolute amounts.
+              count:
+                type: integer
+                format: int64
+
+    AdminStats:
+      type: object
+      properties:
+        users:
+          type: integer
+          format: int64
+        transactions:
+          type: integer
+          format: int64
+        assistantAnswersLast30Days:
+          type: integer
+          format: int64
+        aiCallsLast30Days:
+          type: integer
+          format: int64
+        inputTokensLast30Days:
+          type: integer
+          format: int64
+        outputTokensLast30Days:
+          type: integer
+          format: int64
+        aiEnabled:
+          type: boolean
