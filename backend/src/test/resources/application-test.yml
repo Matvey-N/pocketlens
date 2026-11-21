@@ -1,0 +1,8 @@
+spring:
+  cache:
+    type: simple
+pocketlens:
+  ai:
+    api-key: ""
+  jobs:
+    categorization-retry-initial-delay: PT1H
