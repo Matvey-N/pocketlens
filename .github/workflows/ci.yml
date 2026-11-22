@@ -137,13 +137,14 @@ jobs:
             ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-frontend:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
-      - name: Scan backend image for critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-backend:${{ github.sha }}
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+      - name: Scan backend image for critical vulnerabilities (Trivy)
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD aquasec/trivy:latest image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-backend:${{ github.sha }}
 
   deploy:
     name: Deploy to production
