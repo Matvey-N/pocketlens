@@ -1,0 +1,60 @@
+# Full local/production-like stack: `cp .env.example .env && docker compose up --build`
+# App: http://localhost:8081  ·  Swagger UI: http://localhost:8081/swagger-ui.html  ·  Grafana: http://localhost:3000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pocketlens
+      POSTGRES_USER: ${DB_USERNAME:-pocketlens}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-pocketlens}"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ${BACKEND_IMAGE:-pocketlens-backend:local}
+    env_file: .env
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/pocketlens
+      REDIS_URL: redis://redis:6379
+      CACHE_TYPE: redis
+      REDIS_HEALTH_ENABLED: "true"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: ${FRONTEND_IMAGE:-pocketlens-frontend:local}
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports: ["8081:80"]
+    depends_on: [backend]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes: ["./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    profiles: [monitoring]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-change-me}
+    volumes: ["./infra/grafana/provisioning:/etc/grafana/provisioning:ro"]
+    depends_on: [prometheus]
+    profiles: [monitoring]
+
+volumes:
+  db-data:
