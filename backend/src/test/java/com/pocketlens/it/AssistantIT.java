@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.jayway.jsonpath.DocumentContext;
 import com.pocketlens.ai.llm.AiUnavailableException;
 import com.pocketlens.ai.llm.LlmClient;
 import com.pocketlens.ai.llm.LlmContent;
@@ -41,25 +41,24 @@ class AssistantIT extends IntegrationTest {
                         "end_turn", 80, 12));
 
         String conversationId = body(mvc.perform(post("/api/v1/conversations")
-                .header(HttpHeaders.AUTHORIZATION, session.bearer())).andReturn()).path("id").asText();
-        JsonNode exchange = body(mvc.perform(post("/api/v1/conversations/" + conversationId + "/messages")
+                .header(HttpHeaders.AUTHORIZATION, session.bearer())).andReturn()).read("$.id");
+        DocumentContext exchange = body(mvc.perform(post("/api/v1/conversations/" + conversationId + "/messages")
                         .header(HttpHeaders.AUTHORIZATION, session.bearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"How much did I spend on groceries in November?\"}"))
                 .andExpect(status().isCreated())
                 .andReturn());
 
-        JsonNode answer = exchange.path("answer");
-        assertThat(answer.path("content").asText()).contains("60.00");
-        assertThat(answer.path("interpretation").get(0).asText()).contains("Groceries");
-        assertThat(answer.path("sourceTransactionCount").asInt()).isEqualTo(2);
+        assertThat(exchange.read("$.answer.content", String.class)).contains("60.00");
+        assertThat(exchange.read("$.answer.interpretation[0]", String.class)).contains("Groceries");
+        assertThat(exchange.read("$.answer.sourceTransactionCount", Integer.class)).isEqualTo(2);
+        String answerId = exchange.read("$.answer.id");
 
-        JsonNode sources = body(mvc.perform(get("/api/v1/conversations/" + conversationId + "/messages/"
-                        + answer.path("id").asText() + "/transactions")
+        DocumentContext sources = body(mvc.perform(get("/api/v1/conversations/" + conversationId + "/messages/"
+                        + answerId + "/transactions")
                 .header(HttpHeaders.AUTHORIZATION, session.bearer())).andExpect(status().isOk()).andReturn());
-        assertThat(sources.path("transactions")).hasSize(2);
-        assertThat(new BigDecimal(sources.path("totals").get(0).path("amount").asText()))
-                .isEqualByComparingTo("60.00");
+        assertThat(sources.read("$.transactions.length()", Integer.class)).isEqualTo(2);
+        assertThat(new BigDecimal(sources.read("$.totals[0].amount").toString())).isEqualByComparingTo("60.00");
 
         mvc.perform(get("/api/v1/conversations/" + conversationId).header(HttpHeaders.AUTHORIZATION, session.bearer()))
                 .andExpect(jsonPath("$.messages.length()").value(2))
@@ -70,7 +69,7 @@ class AssistantIT extends IntegrationTest {
     void unavailableProviderAndRejectedPromptsReturnClearErrors() throws Exception {
         Session session = register();
         String conversationId = body(mvc.perform(post("/api/v1/conversations")
-                .header(HttpHeaders.AUTHORIZATION, session.bearer())).andReturn()).path("id").asText();
+                .header(HttpHeaders.AUTHORIZATION, session.bearer())).andReturn()).read("$.id");
         when(llmClient.send(any())).thenThrow(new AiUnavailableException("down"));
 
         mvc.perform(post("/api/v1/conversations/" + conversationId + "/messages")

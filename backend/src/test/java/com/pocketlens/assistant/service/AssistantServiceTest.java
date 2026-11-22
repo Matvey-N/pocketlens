@@ -9,7 +9,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pocketlens.ai.llm.AiUnavailableException;
 import com.pocketlens.ai.llm.LlmClient;
 import com.pocketlens.ai.llm.LlmContent;
@@ -36,6 +35,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import tools.jackson.databind.json.JsonMapper;
 
 class AssistantServiceTest {
 
@@ -77,7 +77,7 @@ class AssistantServiceTest {
         };
         service = new AssistantService(llm, new ToolRegistry(List.of(total)), new PromptGuard(TestData.properties()),
                 new SlidingWindowRateLimiter(TestData.properties(), TestData.clock()), conversationService,
-                conversations, messages, categories, usage, new ObjectMapper(), TestData.properties(),
+                conversations, messages, categories, usage, JsonMapper.builder().build(), TestData.properties(),
                 TestData.clock());
         when(conversationService.get(USER_ID, CONVERSATION_ID))
                 .thenReturn(new Conversation(USER_ID, TestData.NOW));

@@ -10,7 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.jayway.jsonpath.DocumentContext;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -29,15 +30,15 @@ class ExpenseFlowIT extends IntegrationTest {
         Session session = register();
         String auth = session.bearer();
 
-        JsonNode summary = importCsv(session, SAMPLE_CSV);
-        assertThat(summary.path("rowsRead").asInt()).isEqualTo(8);
-        assertThat(summary.path("imported").asInt()).isEqualTo(8);
-        assertThat(summary.path("categorizedByRules").asInt()).isGreaterThanOrEqualTo(6);
-        assertThat(summary.path("aiAvailable").asBoolean()).isFalse();
+        DocumentContext summary = importCsv(session, SAMPLE_CSV);
+        assertThat(summary.read("$.rowsRead", Integer.class)).isEqualTo(8);
+        assertThat(summary.read("$.imported", Integer.class)).isEqualTo(8);
+        assertThat(summary.read("$.categorizedByRules", Integer.class)).isGreaterThanOrEqualTo(6);
+        assertThat(summary.read("$.aiAvailable", Boolean.class)).isFalse();
 
-        JsonNode again = importCsv(session, SAMPLE_CSV);
-        assertThat(again.path("imported").asInt()).isZero();
-        assertThat(again.path("duplicates").asInt()).isEqualTo(8);
+        DocumentContext again = importCsv(session, SAMPLE_CSV);
+        assertThat(again.read("$.imported", Integer.class)).isZero();
+        assertThat(again.read("$.duplicates", Integer.class)).isEqualTo(8);
 
         mvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, auth)
                         .param("from", "2026-11-01").param("to", "2026-11-30").param("sort", "amount,asc"))
@@ -48,11 +49,12 @@ class ExpenseFlowIT extends IntegrationTest {
                 .andExpect(status().isBadRequest());
 
         // CAFE BLOOM is unknown without AI: correct it once and remember the rule
-        JsonNode cafe = body(mvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, auth)
-                .param("q", "cafe")).andReturn()).path("items").get(0);
-        assertThat(cafe.path("needsReview").asBoolean()).isTrue();
+        DocumentContext cafeList = body(mvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, auth)
+                .param("q", "cafe")).andReturn());
+        assertThat(cafeList.read("$.items[0].needsReview", Boolean.class)).isTrue();
+        String cafeId = cafeList.read("$.items[0].id");
         String eatingOut = categoryId(auth, "Eating out");
-        mvc.perform(patch("/api/v1/transactions/" + cafe.path("id").asText()).header(HttpHeaders.AUTHORIZATION, auth)
+        mvc.perform(patch("/api/v1/transactions/" + cafeId).header(HttpHeaders.AUTHORIZATION, auth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"categoryId\":\"" + eatingOut + "\",\"applyToMerchant\":true}"))
                 .andExpect(status().isOk())
@@ -131,13 +133,11 @@ class ExpenseFlowIT extends IntegrationTest {
     }
 
     private String categoryId(String auth, String name) throws Exception {
-        JsonNode categories = body(mvc.perform(get("/api/v1/categories").header(HttpHeaders.AUTHORIZATION, auth))
-                .andReturn());
-        for (JsonNode c : categories) {
-            if (name.equals(c.path("name").asText())) {
-                return c.path("id").asText();
-            }
+        List<String> ids = body(mvc.perform(get("/api/v1/categories").header(HttpHeaders.AUTHORIZATION, auth))
+                .andReturn()).read("$[?(@.name == '" + name + "')].id");
+        if (ids.isEmpty()) {
+            throw new IllegalStateException("No category " + name);
         }
-        throw new IllegalStateException("No category " + name);
+        return ids.get(0);
     }
 }

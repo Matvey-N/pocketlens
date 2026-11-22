@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -22,12 +21,11 @@ class DataIsolationIT extends IntegrationTest {
         Session bob = register();
         importCsv(alice, SAMPLE_CSV);
 
-        JsonNode aliceTransactions = body(mvc.perform(get("/api/v1/transactions")
-                .header(HttpHeaders.AUTHORIZATION, alice.bearer())).andExpect(status().isOk()).andReturn());
-        String transactionId = aliceTransactions.path("items").get(0).path("id").asText();
-        JsonNode categories = body(mvc.perform(get("/api/v1/categories")
-                .header(HttpHeaders.AUTHORIZATION, bob.bearer())).andReturn());
-        String categoryId = categories.get(0).path("id").asText();
+        String transactionId = body(mvc.perform(get("/api/v1/transactions")
+                .header(HttpHeaders.AUTHORIZATION, alice.bearer())).andExpect(status().isOk()).andReturn())
+                .read("$.items[0].id");
+        String categoryId = body(mvc.perform(get("/api/v1/categories")
+                .header(HttpHeaders.AUTHORIZATION, bob.bearer())).andReturn()).read("$[0].id");
 
         mvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, bob.bearer()))
                 .andExpect(jsonPath("$.totalItems").value(0));
@@ -41,9 +39,10 @@ class DataIsolationIT extends IntegrationTest {
         mvc.perform(get("/api/v1/dashboard").param("month", "2026-11").header(HttpHeaders.AUTHORIZATION, bob.bearer()))
                 .andExpect(jsonPath("$.currencies.length()").value(0));
 
-        JsonNode conversation = body(mvc.perform(post("/api/v1/conversations")
-                .header(HttpHeaders.AUTHORIZATION, alice.bearer())).andExpect(status().isCreated()).andReturn());
-        mvc.perform(get("/api/v1/conversations/" + conversation.path("id").asText())
+        String conversationId = body(mvc.perform(post("/api/v1/conversations")
+                .header(HttpHeaders.AUTHORIZATION, alice.bearer())).andExpect(status().isCreated()).andReturn())
+                .read("$.id");
+        mvc.perform(get("/api/v1/conversations/" + conversationId)
                         .header(HttpHeaders.AUTHORIZATION, bob.bearer()))
                 .andExpect(status().isNotFound());
     }

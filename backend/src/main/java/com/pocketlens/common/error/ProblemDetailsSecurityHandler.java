@@ -1,6 +1,5 @@
 package com.pocketlens.common.error;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -11,6 +10,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Writes 401 and 403 responses produced by the security filter chain in the same problem-details format as
@@ -19,10 +19,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProblemDetailsSecurityHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
 
-    public ProblemDetailsSecurityHandler(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public ProblemDetailsSecurityHandler(JsonMapper jsonMapper) {
+        this.jsonMapper = jsonMapper;
     }
 
     @Override
@@ -41,6 +41,6 @@ public class ProblemDetailsSecurityHandler implements AuthenticationEntryPoint, 
     private void write(HttpServletResponse response, ProblemDetail problem) throws IOException {
         response.setStatus(problem.getStatus());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        objectMapper.writeValue(response.getOutputStream(), problem);
+        jsonMapper.writeValue(response.getOutputStream(), problem);
     }
 }

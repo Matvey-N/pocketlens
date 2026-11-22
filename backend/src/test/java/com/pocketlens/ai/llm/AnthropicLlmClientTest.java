@@ -3,9 +3,6 @@ package com.pocketlens.ai.llm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.pocketlens.support.TestData;
 import java.util.List;
 import java.util.Map;
@@ -13,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 class AnthropicLlmClientTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
-    private final AnthropicLlmClient client = new AnthropicLlmClient(TestData.properties("key").ai(), mapper);
+    private final AnthropicLlmClient client = new AnthropicLlmClient(TestData.properties("key").ai());
 
     @Test
+    @SuppressWarnings("unchecked")
     void buildsMessagesApiRequestWithToolsAndToolResults() {
         LlmRequest request = new LlmRequest("system", List.of(
                 LlmMessage.user("question"),
@@ -24,24 +21,27 @@ class AnthropicLlmClientTest {
                 new LlmMessage(LlmMessage.Role.USER, List.of(new LlmContent.ToolResult("t1", "{\"x\":1}", true)))),
                 List.of(new LlmTool("tool", "desc", Map.of("type", "object"))), "tool", 256);
 
-        ObjectNode body = client.toRequestBody(request);
+        Map<String, Object> body = client.toRequestBody(request);
 
-        assertThat(body.path("model").asText()).isEqualTo("test-model");
-        assertThat(body.path("system").asText()).isEqualTo("system");
-        assertThat(body.path("messages")).hasSize(3);
-        assertThat(body.path("messages").get(1).path("content").get(0).path("type").asText()).isEqualTo("tool_use");
-        JsonNode toolResult = body.path("messages").get(2).path("content").get(0);
-        assertThat(toolResult.path("tool_use_id").asText()).isEqualTo("t1");
-        assertThat(toolResult.path("is_error").asBoolean()).isTrue();
-        assertThat(body.path("tools").get(0).path("input_schema").path("type").asText()).isEqualTo("object");
-        assertThat(body.path("tool_choice").path("name").asText()).isEqualTo("tool");
+        assertThat(body).containsEntry("model", "test-model").containsEntry("system", "system");
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) body.get("messages");
+        assertThat(messages).hasSize(3);
+        Map<String, Object> toolUse = ((List<Map<String, Object>>) messages.get(1).get("content")).get(0);
+        assertThat(toolUse).containsEntry("type", "tool_use");
+        Map<String, Object> toolResult = ((List<Map<String, Object>>) messages.get(2).get("content")).get(0);
+        assertThat(toolResult).containsEntry("tool_use_id", "t1").containsEntry("is_error", true);
+        Map<String, Object> tool = ((List<Map<String, Object>>) body.get("tools")).get(0);
+        assertThat(tool.get("input_schema")).isEqualTo(Map.of("type", "object"));
+        assertThat(body.get("tool_choice")).isEqualTo(Map.of("type", "tool", "name", "tool"));
     }
 
     @Test
-    void parsesTextToolUseAndUsage() throws Exception {
-        JsonNode response = mapper.readTree("""
-                {"content":[{"type":"text","text":"Hi"},{"type":"tool_use","id":"t1","name":"get","input":{"a":1}}],
-                 "stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":3}}""");
+    void parsesTextToolUseAndUsage() {
+        Map<String, Object> response = Map.of(
+                "content", List.of(Map.of("type", "text", "text", "Hi"),
+                        Map.of("type", "tool_use", "id", "t1", "name", "get", "input", Map.of("a", 1)), "junk"),
+                "stop_reason", "tool_use",
+                "usage", Map.of("input_tokens", 10, "output_tokens", 3));
 
         LlmResponse parsed = client.parse(response);
 
@@ -49,6 +49,7 @@ class AnthropicLlmClientTest {
         assertThat(parsed.wantsTools()).isTrue();
         assertThat(parsed.toolUses()).singleElement().satisfies(u -> assertThat(u.input()).containsEntry("a", 1));
         assertThat(parsed.inputTokens()).isEqualTo(10);
+        assertThat(client.parse(Map.of()).content()).isEmpty();
         assertThatThrownBy(() -> client.parse(null)).isInstanceOf(AiUnavailableException.class);
         assertThat(client.isAvailable()).isTrue();
     }

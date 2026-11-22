@@ -4,13 +4,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.HttpHeaders;
@@ -19,7 +19,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Base class of integration tests: the full application against a real PostgreSQL in a container.
@@ -31,7 +32,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 public abstract class IntegrationTest {
 
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
 
     static {
         POSTGRES.start();
@@ -53,7 +54,7 @@ public abstract class IntegrationTest {
     protected MockMvc mvc;
 
     @Autowired
-    protected ObjectMapper json;
+    protected JsonMapper json;
 
     /** Registers a new user and returns its access token. */
     protected Session register() throws Exception {
@@ -65,23 +66,23 @@ public abstract class IntegrationTest {
                                 "privacyNoticeVersion", "2026-11"))))
                 .andExpect(status().isCreated())
                 .andReturn();
-        JsonNode body = json.readTree(result.getResponse().getContentAsString());
-        return new Session(email, body.path("accessToken").asText(), UUID.fromString(body.path("user").path("id")
-                .asText()), result.getResponse().getCookie("pl_refresh").getValue());
+        DocumentContext body = body(result);
+        return new Session(email, body.read("$.accessToken"), UUID.fromString(body.read("$.user.id")),
+                result.getResponse().getCookie("pl_refresh").getValue());
     }
 
-    protected JsonNode importCsv(Session session, String csv) throws Exception {
+    protected DocumentContext importCsv(Session session, String csv) throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "statement.csv", "text/csv",
                 csv.getBytes(StandardCharsets.UTF_8));
         MvcResult result = mvc.perform(multipart("/api/v1/imports").file(file).param("format", "generic")
                         .header(HttpHeaders.AUTHORIZATION, session.bearer()))
                 .andExpect(status().isCreated())
                 .andReturn();
-        return json.readTree(result.getResponse().getContentAsString());
+        return body(result);
     }
 
-    protected JsonNode body(MvcResult result) throws Exception {
-        return json.readTree(result.getResponse().getContentAsString());
+    protected DocumentContext body(MvcResult result) throws Exception {
+        return JsonPath.parse(result.getResponse().getContentAsString());
     }
 
     /** Authenticated user of a test. */

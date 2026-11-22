@@ -4,16 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import java.io.Reader;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.Yaml;
 
 /**
  * Guards the accuracy of the API documentation: every operation implemented by the controllers is documented in
@@ -25,11 +24,14 @@ class OpenApiContractIT extends IntegrationTest {
 
     @Test
     void documentedOperationsMatchImplementedOperations() throws Exception {
-        JsonNode generated = body(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn());
-        JsonNode documented = new ObjectMapper(new YAMLFactory())
-                .readTree(Path.of("..", "docs", "reference", "openapi.yaml").toFile());
+        Map<String, Object> generated = body(mvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn())
+                .read("$");
+        Map<String, Object> documented;
+        try (Reader reader = Files.newBufferedReader(Path.of("..", "docs", "reference", "openapi.yaml"))) {
+            documented = new Yaml().load(reader);
+        }
 
-        assertThat(operations(documented)).isEqualTo(operations(generated));
+        assertThat(operations(documented)).isNotEmpty().isEqualTo(operations(generated));
     }
 
     @Test
@@ -37,17 +39,15 @@ class OpenApiContractIT extends IntegrationTest {
         mvc.perform(get("/openapi.yaml")).andExpect(status().isOk());
     }
 
-    private static Set<String> operations(JsonNode spec) {
+    @SuppressWarnings("unchecked")
+    private static Set<String> operations(Map<String, Object> spec) {
         Set<String> result = new TreeSet<>();
-        Iterator<Map.Entry<String, JsonNode>> paths = spec.path("paths").fields();
-        while (paths.hasNext()) {
-            Map.Entry<String, JsonNode> path = paths.next();
-            path.getValue().fieldNames().forEachRemaining(method -> {
-                if (HTTP_METHODS.contains(method)) {
-                    result.add(method.toUpperCase(Locale.ROOT) + " " + path.getKey());
-                }
-            });
-        }
+        Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
+        paths.forEach((path, item) -> ((Map<String, Object>) item).keySet().forEach(method -> {
+            if (HTTP_METHODS.contains(method)) {
+                result.add(method.toUpperCase(Locale.ROOT) + " " + path);
+            }
+        }));
         return result;
     }
 }

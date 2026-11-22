@@ -1,16 +1,13 @@
 package com.pocketlens.ai.llm;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.pocketlens.common.config.AppProperties;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.ResourceAccessException;
@@ -26,24 +23,23 @@ public class AnthropicLlmClient implements LlmClient {
     private static final Logger log = LoggerFactory.getLogger(AnthropicLlmClient.class);
     private static final String API_VERSION = "2023-06-01";
     private static final int MAX_ATTEMPTS = 2;
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
+    private static final ParameterizedTypeReference<Map<String, Object>> JSON_OBJECT =
+            new ParameterizedTypeReference<>() {
+            };
 
     private final RestClient restClient;
-    private final ObjectMapper objectMapper;
     private final String model;
 
-    public AnthropicLlmClient(AppProperties.Ai settings, ObjectMapper objectMapper) {
+    public AnthropicLlmClient(AppProperties.Ai settings) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout((int) settings.timeout().toMillis());
-        requestFactory.setReadTimeout((int) settings.timeout().toMillis());
+        requestFactory.setConnectTimeout(settings.timeout());
+        requestFactory.setReadTimeout(settings.timeout());
         this.restClient = RestClient.builder()
                 .baseUrl(settings.baseUrl())
                 .requestFactory(requestFactory)
                 .defaultHeader("x-api-key", settings.apiKey())
                 .defaultHeader("anthropic-version", API_VERSION)
                 .build();
-        this.objectMapper = objectMapper;
         this.model = settings.model();
     }
 
@@ -54,16 +50,16 @@ public class AnthropicLlmClient implements LlmClient {
 
     @Override
     public LlmResponse send(LlmRequest request) {
-        ObjectNode body = toRequestBody(request);
+        Map<String, Object> body = toRequestBody(request);
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             long started = System.nanoTime();
             try {
-                JsonNode response = restClient.post()
+                Map<String, Object> response = restClient.post()
                         .uri("/v1/messages")
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(body)
                         .retrieve()
-                        .body(JsonNode.class);
+                        .body(JSON_OBJECT);
                 LlmResponse parsed = parse(response);
                 log.info("llm_call model={} attempt={} durationMs={} inputTokens={} outputTokens={} stopReason={}",
                         model, attempt, (System.nanoTime() - started) / 1_000_000,
@@ -83,39 +79,34 @@ public class AnthropicLlmClient implements LlmClient {
         throw new AiUnavailableException("The assistant is temporarily unavailable. Please try again later.");
     }
 
-    ObjectNode toRequestBody(LlmRequest request) {
-        ObjectNode body = objectMapper.createObjectNode();
+    Map<String, Object> toRequestBody(LlmRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("max_tokens", request.maxTokens());
         if (request.system() != null) {
             body.put("system", request.system());
         }
-        ArrayNode messages = body.putArray("messages");
+        List<Map<String, Object>> messages = new ArrayList<>();
         for (LlmMessage message : request.messages()) {
-            ObjectNode node = messages.addObject();
-            node.put("role", message.role() == LlmMessage.Role.USER ? "user" : "assistant");
-            ArrayNode content = node.putArray("content");
-            message.content().forEach(block -> content.add(toContentNode(block)));
+            messages.add(Map.of(
+                    "role", message.role() == LlmMessage.Role.USER ? "user" : "assistant",
+                    "content", message.content().stream().map(AnthropicLlmClient::toContent).toList()));
         }
+        body.put("messages", messages);
         if (!request.tools().isEmpty()) {
-            ArrayNode tools = body.putArray("tools");
-            for (LlmTool tool : request.tools()) {
-                ObjectNode node = tools.addObject();
-                node.put("name", tool.name());
-                node.put("description", tool.description());
-                node.set("input_schema", objectMapper.valueToTree(tool.inputSchema()));
-            }
+            body.put("tools", request.tools().stream()
+                    .map(t -> Map.of("name", t.name(), "description", t.description(), "input_schema",
+                            t.inputSchema()))
+                    .toList());
             if (request.forcedTool() != null) {
-                ObjectNode choice = body.putObject("tool_choice");
-                choice.put("type", "tool");
-                choice.put("name", request.forcedTool());
+                body.put("tool_choice", Map.of("type", "tool", "name", request.forcedTool()));
             }
         }
         return body;
     }
 
-    private ObjectNode toContentNode(LlmContent block) {
-        ObjectNode node = objectMapper.createObjectNode();
+    private static Map<String, Object> toContent(LlmContent block) {
+        Map<String, Object> node = new LinkedHashMap<>();
         switch (block) {
             case LlmContent.Text text -> {
                 node.put("type", "text");
@@ -125,7 +116,7 @@ public class AnthropicLlmClient implements LlmClient {
                 node.put("type", "tool_use");
                 node.put("id", use.id());
                 node.put("name", use.name());
-                node.set("input", objectMapper.valueToTree(use.input()));
+                node.put("input", use.input());
             }
             case LlmContent.ToolResult result -> {
                 node.put("type", "tool_result");
@@ -139,22 +130,36 @@ public class AnthropicLlmClient implements LlmClient {
         return node;
     }
 
-    LlmResponse parse(JsonNode response) {
+    @SuppressWarnings("unchecked")
+    LlmResponse parse(Map<String, Object> response) {
         if (response == null) {
             throw new AiUnavailableException("Empty response from the AI provider");
         }
         List<LlmContent> content = new ArrayList<>();
-        for (JsonNode block : response.path("content")) {
-            String type = block.path("type").asText();
-            if ("text".equals(type)) {
-                content.add(new LlmContent.Text(block.path("text").asText()));
-            } else if ("tool_use".equals(type)) {
-                Map<String, Object> input = objectMapper.convertValue(block.path("input"), MAP_TYPE);
-                content.add(new LlmContent.ToolUse(block.path("id").asText(), block.path("name").asText(), input));
+        if (response.get("content") instanceof List<?> blocks) {
+            for (Object item : blocks) {
+                if (!(item instanceof Map<?, ?> block)) {
+                    continue;
+                }
+                Object type = block.get("type");
+                if ("text".equals(type)) {
+                    content.add(new LlmContent.Text(String.valueOf(block.get("text"))));
+                } else if ("tool_use".equals(type)) {
+                    Map<String, Object> input = block.get("input") instanceof Map<?, ?> map
+                            ? (Map<String, Object>) map
+                            : Map.of();
+                    content.add(new LlmContent.ToolUse(String.valueOf(block.get("id")),
+                            String.valueOf(block.get("name")), input));
+                }
             }
         }
-        JsonNode usage = response.path("usage");
-        return new LlmResponse(content, response.path("stop_reason").asText(null),
-                usage.path("input_tokens").asInt(0), usage.path("output_tokens").asInt(0));
+        Map<?, ?> usage = response.get("usage") instanceof Map<?, ?> map ? map : Map.of();
+        Object stopReason = response.get("stop_reason");
+        return new LlmResponse(content, stopReason == null ? null : stopReason.toString(),
+                number(usage.get("input_tokens")), number(usage.get("output_tokens")));
+    }
+
+    private static int number(Object value) {
+        return value instanceof Number n ? n.intValue() : 0;
     }
 }

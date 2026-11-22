@@ -1,7 +1,5 @@
 package com.pocketlens.assistant.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pocketlens.ai.domain.AiUsageRecord;
 import com.pocketlens.ai.llm.LlmClient;
 import com.pocketlens.ai.llm.LlmContent;
@@ -37,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Answers spending questions with tool calling (UC-2). The model only interprets the question and chooses tools;
@@ -61,7 +60,7 @@ public class AssistantService {
     private final MessageRepository messages;
     private final CategoryService categoryService;
     private final AiUsageService usageService;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private final AppProperties.Assistant settings;
     private final Clock clock;
 
@@ -69,7 +68,7 @@ public class AssistantService {
     public AssistantService(LlmClient llmClient, ToolRegistry toolRegistry, PromptGuard promptGuard,
                             SlidingWindowRateLimiter rateLimiter, ConversationService conversationService,
                             ConversationRepository conversations, MessageRepository messages,
-                            CategoryService categoryService, AiUsageService usageService, ObjectMapper objectMapper,
+                            CategoryService categoryService, AiUsageService usageService, JsonMapper jsonMapper,
                             AppProperties properties, Clock clock) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
@@ -80,7 +79,7 @@ public class AssistantService {
         this.messages = messages;
         this.categoryService = categoryService;
         this.usageService = usageService;
-        this.objectMapper = objectMapper;
+        this.jsonMapper = jsonMapper;
         this.settings = properties.assistant();
         this.clock = clock;
     }
@@ -195,11 +194,7 @@ public class AssistantService {
     }
 
     private String toJson(Object data) {
-        try {
-            return objectMapper.writeValueAsString(data);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Tool result is not serialisable", e);
-        }
+        return jsonMapper.writeValueAsString(data);
     }
 
     private record LoopResult(String answer, List<String> interpretations, List<ToolCallRecord> calls,

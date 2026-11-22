@@ -26,6 +26,8 @@ spring:
       url: ${REDIS_URL:redis://localhost:6379}
   cache:
     type: ${CACHE_TYPE:simple}
+    redis:
+      time-to-live: 10m
   servlet:
     multipart:
       max-file-size: 5MB
@@ -33,8 +35,6 @@ spring:
   threads:
     virtual:
       enabled: true
-  jackson:
-    default-property-inclusion: always
   mvc:
     problemdetails:
       enabled: false
