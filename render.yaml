@@ -1,0 +1,43 @@
+# Render Blueprint: two free Docker web services. The SPA service (nginx) proxies /api to the API service, so the
+# browser talks to one origin (needed for the SameSite=Strict refresh cookie). PostgreSQL: external (e.g. Neon free).
+services:
+  - type: web
+    name: pocketlens-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health/liveness
+    envVars:
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DB_POOL_SIZE
+        value: "3"
+      - key: JAVA_TOOL_OPTIONS
+        value: "-XX:MaxRAMPercentage=65 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError"
+      - key: AI_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+  - type: web
+    name: pocketlens
+    runtime: docker
+    plan: free
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "80"
+      - key: BACKEND_URL
+        sync: false
