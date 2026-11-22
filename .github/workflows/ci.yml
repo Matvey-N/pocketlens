@@ -46,3 +46,117 @@ jobs:
             backend/target/failsafe-reports
           retention-days: 14
 
+  frontend:
+    name: Frontend — lint, type-check, unit tests, build, e2e
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Security audit (fail on critical vulnerabilities)
+        run: npm audit --omit=dev --audit-level=critical
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - name: End-to-end tests (Playwright)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run e2e
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-reports
+          path: |
+            frontend/coverage
+            frontend/playwright-report
+          retention-days: 14
+
+  api-docs:
+    name: API docs — lint OpenAPI contract and build Redoc site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Lint OpenAPI with Redocly
+        run: npx --yes @redocly/cli@latest lint docs/reference/openapi.yaml --config docs/redocly.yaml
+      - name: Build static reference
+        run: npx --yes @redocly/cli@latest build-docs docs/reference/openapi.yaml --output docs-site/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: docs-site
+
+  images:
+    name: Docker images → GitHub Container Registry
+    needs: [backend, frontend, api-docs]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image names
+        id: names
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-backend:latest
+            ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-frontend:latest
+            ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+      - name: Scan backend image for critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ steps.names.outputs.owner }}/pocketlens-backend:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  deploy:
+    name: Deploy to production
+    needs: images
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger deployment of the new images
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "DEPLOY_HOOK_URL secret is not configured; skipping deployment." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          curl -fsS -X POST "$DEPLOY_HOOK_URL"
