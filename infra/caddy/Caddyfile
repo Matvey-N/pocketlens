@@ -1,0 +1,5 @@
+# HTTPS entry point. Caddy obtains a free Let's Encrypt certificate for $DOMAIN automatically.
+{$DOMAIN} {
+    encode gzip
+    reverse_proxy frontend:80
+}
