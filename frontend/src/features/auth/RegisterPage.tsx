@@ -24,7 +24,7 @@ import type { Problem } from '@/shared/types/api';
 export default function RegisterPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
-  const { data: notice, isLoading: noticeLoading } = usePrivacyNoticeQuery();
+  const { data: notice, isLoading: noticeLoading, isError: noticeFailed, refetch } = usePrivacyNoticeQuery();
   const [registerUser, { isLoading, error }] = useRegisterMutation();
   const {
     register,
@@ -106,7 +106,18 @@ export default function RegisterPage() {
             tabIndex={0}
             aria-label="Privacy notice"
           >
-            {noticeLoading ? (
+            {noticeFailed ? (
+              <Alert
+                severity="error"
+                action={
+                  <Button color="inherit" size="small" onClick={() => void refetch()}>
+                    Retry
+                  </Button>
+                }
+              >
+                The server is not reachable right now. If it was asleep, wait a moment and retry.
+              </Alert>
+            ) : noticeLoading ? (
               <Skeleton height={60} />
             ) : (
               <Typography variant="body2" color="text.secondary">
