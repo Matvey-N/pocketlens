@@ -11,7 +11,7 @@ run — every figure is computed by SQL and the answer links to the exact transa
 
 | | |
 |---|---|
-| Backend | Java 21, Spring Boot 3.5, Spring Security (JWT), Spring Data JPA / Hibernate, PostgreSQL 16, Flyway, Redis cache, Actuator + Prometheus |
+| Backend | Java 21, Spring Boot 4.1 (Spring Framework 7), Spring Security 7 (JWT), Spring Data JPA / Hibernate, PostgreSQL 16, Flyway, Redis cache, Actuator + Prometheus |
 | Frontend | React 19, TypeScript, Vite, Material UI, Redux Toolkit + RTK Query, React Router, React Hook Form + Zod, Recharts |
 | AI | Anthropic Claude (Messages API, tool use) behind an `LlmClient` interface; optional |
 | Quality | JUnit 5, Mockito, Testcontainers, JaCoCo (≥ 80 % gate), Vitest, Testing Library, MSW, Playwright, ESLint, Prettier, Redocly |
@@ -57,7 +57,7 @@ infra/        Prometheus and Grafana configuration
 
 | Requirement | Where |
 |---|---|
-| Modern framework, DB, ORM | Spring Boot 3.5 · PostgreSQL · JPA/Hibernate entities in `*/domain`, repositories in `*/persistence`, Flyway `backend/src/main/resources/db/migration` |
+| Modern framework, DB, ORM | Spring Boot 4.1 · PostgreSQL · JPA/Hibernate entities in `*/domain`, repositories in `*/persistence`, Flyway `backend/src/main/resources/db/migration` |
 | Layered architecture, modularity | Every module has `api` → `service` → `domain`/`persistence` packages — see [architecture](docs/architecture/overview.md) |
 | SOLID | Extension points `StatementFormat` (new bank = one class) and `AssistantTool`; `LlmClient` interface (DIP); single-purpose `CategoryUsageCleaner` components |
 | API description | [`docs/reference/openapi.yaml`](docs/reference/openapi.yaml), served at `/swagger-ui.html`; `OpenApiContractIT` checks it against the code |
